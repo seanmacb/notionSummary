@@ -6,7 +6,7 @@ from dateutil.parser import parse as parse_date
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 TASKS_DB     = os.environ["TASKS_DB"]
 PROJECTS_DB  = os.environ["PROJECTS_DB"]
-
+MY_USER      = "U07QM549L4V"
 NOTION_VERSION = "2022-06-28"
 
 HEADERS = {
@@ -15,6 +15,16 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+def send_to_slack(text):
+    """Send the weekly report to Slack via incoming webhook."""
+    url = os.environ["SLACK_WEBHOOK_URL"]
+
+    payload = {
+        "text": text
+    }
+
+    resp = requests.post(url, json=payload)
+    resp.raise_for_status()
 
 # -------------------------------
 # Query any Notion database (with pagination)
@@ -158,8 +168,6 @@ def get_tasks_for_next_week(project_map):
 # Format output
 # -------------------------------
 def format_report(grouped):
-    """Format weekly status report grouped by project status and project name."""
-
     CUSTOM_ORDER = [
         "Working actively",
         "Writing",
@@ -174,40 +182,43 @@ def format_report(grouped):
         return CUSTOM_ORDER.index(status) if status in CUSTOM_ORDER else 999
 
     lines = []
-    lines.append("STATUS UPDATE\n")
+    lines.append(f"<@{MY_USER}>")
+    lines.append("*STATUS UPDATE*")
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
 
     if not grouped:
-        lines.append("\n(No tasks scheduled for the upcoming week)\n")
+        lines.append("_No tasks scheduled for the upcoming week._")
         return "\n".join(lines)
 
-    # Ordered by custom status ordering
     for status in sorted(grouped.keys(), key=sort_key):
-        lines.append(f"\n## {status}\n")
+        lines.append(f"\n*{status}*")
 
-        # Sort project names alphabetically
         for project_name in sorted(grouped[status].keys()):
-            lines.append(f"### {project_name}")
+            lines.append(f"• *{project_name}*")
 
-            # Sort tasks by start date
             tasks_sorted = sorted(grouped[status][project_name],
-                                  key=lambda t: t['start'])
+                                  key=lambda t: t["start"])
 
             for t in tasks_sorted:
-                lines.append(f"- {t['name']} ({t['start']} → {t['end']})")
-
-            lines.append("")
+                lines.append(
+                    f"    • {t['name']}  ({t['start']} → {t['end']})"
+                )
 
     return "\n".join(lines)
-
 # -------------------------------
 # Main
 # -------------------------------
 def main():
     projects = get_projects()
     grouped = get_tasks_for_next_week(projects)
-    print(format_report(grouped))
+    report = format_report(grouped)
 
+    print(report)  # still print locally if running manually
 
+    # Send to Slack
+    if "SLACK_WEBHOOK_URL" in os.environ:
+        send_to_slack(report)
+    else:
+        print("\n[Slack disabled — no SLACK_WEBHOOK_URL environment variable]")
 if __name__ == "__main__":
     main()
