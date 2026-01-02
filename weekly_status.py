@@ -4,10 +4,11 @@ from datetime import datetime, timedelta
 from dateutil.parser import parse as parse_date
 
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
-TASKS_DB     = os.environ["TASKS_DB"]
-PROJECTS_DB  = os.environ["PROJECTS_DB"]
-MY_USER      = "U07QM549L4V"
+TASKS_DB = os.environ["TASKS_DB"]
+PROJECTS_DB = os.environ["PROJECTS_DB"]
+MY_USER = "U07QM549L4V"
 NOTION_VERSION = "2022-06-28"
+SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -15,16 +16,25 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+skip_status = ["Done", "Canceled", "Backlog"]
+
+
+# --------------------------
+# Add a line to recall the benty-fields daily papers link
+# --------------------------
+def add_BentyFields():
+    return "<https://www.benty-fields.com/daily_arXiv|Benty fields daily articles>"
+
+
 def send_to_slack(text):
     """Send the weekly report to Slack via incoming webhook."""
     url = os.environ["SLACK_WEBHOOK_URL"]
 
-    payload = {
-        "text": text
-    }
+    payload = {"text": text}
 
     resp = requests.post(url, json=payload)
     resp.raise_for_status()
+
 
 # -------------------------------
 # Query any Notion database (with pagination)
@@ -55,6 +65,7 @@ def query_db(db_id, filters=None):
 # Load project → status mapping
 # -------------------------------
 
+
 def get_projects():
     """Return mapping: project_id → {"name": ..., "status": ...}"""
     project_rows = query_db(PROJECTS_DB)
@@ -76,12 +87,10 @@ def get_projects():
         else:
             status = "UNKNOWN"
 
-        mapping[proj_id] = {
-            "name": name,
-            "status": status
-        }
+        mapping[proj_id] = {"name": name, "status": status}
 
     return mapping
+
 
 # -------------------------------
 # Get tasks scheduled for next week
@@ -156,18 +165,17 @@ def get_tasks_for_next_week(project_map):
         title_list = title.get("title", [])
         name = title_list[0]["plain_text"] if title_list else "(No name)"
 
-        grouped.setdefault(project_status, {}).setdefault(project_name, []).append({
-            "name": name,
-            "start": str(start),
-            "end": str(end)
-        })
+        grouped.setdefault(project_status, {}).setdefault(project_name, []).append(
+            {"name": name, "start": str(start), "end": str(end)}
+        )
 
     return grouped
+
 
 # -------------------------------
 # Format output
 # -------------------------------
-def format_report(grouped):
+def format_report(grouped, benty=False):
     CUSTOM_ORDER = [
         "Working actively",
         "Writing",
@@ -183,6 +191,11 @@ def format_report(grouped):
 
     lines = []
     lines.append(f"<@{MY_USER}>")
+
+    if benty:
+        lines.append(add_BentyFields())
+        lines.append("\n")
+
     lines.append("*STATUS UPDATE*")
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
 
@@ -191,27 +204,29 @@ def format_report(grouped):
         return "\n".join(lines)
 
     for status in sorted(grouped.keys(), key=sort_key):
-        lines.append(f"\n*{status}*")
+        if status not in skip_status:
+            lines.append(f"\n*{status}*")
 
-        for project_name in sorted(grouped[status].keys()):
-            lines.append(f"• *{project_name}*")
+            for project_name in sorted(grouped[status].keys()):
+                lines.append(f"• *{project_name}*")
 
-            tasks_sorted = sorted(grouped[status][project_name],
-                                  key=lambda t: t["start"])
-
-            for t in tasks_sorted:
-                lines.append(
-                    f"    • {t['name']}  ({t['start']} → {t['end']})"
+                tasks_sorted = sorted(
+                    grouped[status][project_name], key=lambda t: t["start"]
                 )
 
+                for t in tasks_sorted:
+                    lines.append(f"    • {t['name']}  ({t['start']} → {t['end']})")
+
     return "\n".join(lines)
+
+
 # -------------------------------
 # Main
 # -------------------------------
 def main():
     projects = get_projects()
     grouped = get_tasks_for_next_week(projects)
-    report = format_report(grouped)
+    report = format_report(grouped, benty=True)
 
     print(report)  # still print locally if running manually
 
@@ -220,5 +235,7 @@ def main():
         send_to_slack(report)
     else:
         print("\n[Slack disabled — no SLACK_WEBHOOK_URL environment variable]")
+
+
 if __name__ == "__main__":
     main()
