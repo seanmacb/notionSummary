@@ -126,23 +126,13 @@ def get_tasks_for_next_week(project_map):
 
     rows = query_db(
     TASKS_DB,
-        filters={
-            "and": [
-                {
-                    "property": "Status",
-                    "status": {
-                        "does_not_equal": "Complete"
-                    }
-                },
-                {
-                    "property": "Status",
-                    "status": {
-                        "does_not_equal": "Done"
-                    }
-                }
-            ]
+    filters={
+        "property": "Status",
+        "status": {
+            "equals": "In Progress"
         }
-    )
+    }
+)
     grouped = {}
 
     for t in rows:
