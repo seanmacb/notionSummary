@@ -124,7 +124,25 @@ def get_tasks_for_next_week(project_map):
     now = datetime.now().date()
     week_from_now = now + timedelta(days=7)
 
-    rows = query_db(TASKS_DB)
+    rows = query_db(
+    TASKS_DB,
+        filters={
+            "and": [
+                {
+                    "property": "Status",
+                    "status": {
+                        "does_not_equal": "Complete"
+                    }
+                },
+                {
+                    "property": "Status",
+                    "status": {
+                        "does_not_equal": "Done"
+                    }
+                }
+            ]
+        }
+    )
     grouped = {}
 
     for t in rows:
